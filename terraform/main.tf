@@ -1,16 +1,24 @@
 terraform {
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 5.0" }
-    random = { source = "hashicorp/random", version = "~> 3.0" }
   }
 }
 
 provider "aws" {
-  region = var.aws_region
+  region = "us-east-1"
+}
+
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
 }
 
 resource "aws_security_group" "app_sg" {
-  name = "devops-app-sg-${random_id.suffix.hex}"
+  name_prefix = "devops-app-sg-"
   ingress {
     from_port   = 80
     to_port     = 80
@@ -18,14 +26,8 @@ resource "aws_security_group" "app_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
   ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  ingress {
-    from_port   = 22
-    to_port     = 22
+    from_port   = 8000
+    to_port     = 8000
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -37,12 +39,8 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
-resource "random_id" "suffix" {
-  byte_length = 4
-}
-
-resource "aws_iam_role" "ec2_ecr_role" {
-  name = "ec2-ecr-role-${random_id.suffix.hex}"
+resource "aws_iam_role" "ec2_role" {
+  name_prefix = "ec2-ecr-role-"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -54,21 +52,20 @@ resource "aws_iam_role" "ec2_ecr_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "ecr_policy" {
-  role       = aws_iam_role.ec2_ecr_role.name
+  role       = aws_iam_role.ec2_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
 resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "ec2-ecr-profile-${random_id.suffix.hex}"
-  role = aws_iam_role.ec2_ecr_role.name
+  name_prefix = "ec2-profile-"
+  role        = aws_iam_role.ec2_role.name
 }
 
 resource "aws_instance" "app_server" {
-  ami                    = var.ami_id
-  instance_type          = "t3.micro"
-  security_groups        = [aws_security_group.app_sg.name]
-  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
-  key_name               = var.key_name != "" ? var.key_name : null
+  ami                  = data.aws_ami.amazon_linux.id
+  instance_type        = "t3.micro"
+  security_groups      = [aws_security_group.app_sg.name]
+  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
   user_data = <<-EOF
     #!/bin/bash
     yum update -y
@@ -76,8 +73,6 @@ resource "aws_instance" "app_server" {
     systemctl start docker
     systemctl enable docker
     usermod -aG docker ec2-user
-    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    chmod +x /usr/local/bin/docker-compose
   EOF
   tags = { Name = "devops-app-server" }
 }
