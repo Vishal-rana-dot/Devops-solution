@@ -1,6 +1,7 @@
 terraform {
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 5.0" }
+    random = { source = "hashicorp/random", version = "~> 3.0" }
   }
 }
 
@@ -9,7 +10,7 @@ provider "aws" {
 }
 
 resource "aws_security_group" "app_sg" {
-  name = "devops-app-sg"
+  name = "devops-app-sg-${random_id.suffix.hex}"
   ingress {
     from_port   = 80
     to_port     = 80
@@ -36,8 +37,12 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
 resource "aws_iam_role" "ec2_ecr_role" {
-  name = "ec2-ecr-role"
+  name = "ec2-ecr-role-${random_id.suffix.hex}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -54,7 +59,7 @@ resource "aws_iam_role_policy_attachment" "ecr_policy" {
 }
 
 resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "ec2-ecr-profile"
+  name = "ec2-ecr-profile-${random_id.suffix.hex}"
   role = aws_iam_role.ec2_ecr_role.name
 }
 
